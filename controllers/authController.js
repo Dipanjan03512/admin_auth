@@ -2,12 +2,17 @@ const User = require("../models/User");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
+// Helper function to validate input fields
+const validateInput = (fields) => {
+  return fields.every((field) => field && field.trim() !== "");
+};
+
 const register = async (req, res) => {
   try {
     const { userID, email, password, role } = req.body;
 
     // Validate input
-    if (!userID || !email || !password) {
+    if (!validateInput([userID, email, password])) {
       return res.status(400).json({
         success: false,
         message: "All fields are required",
@@ -15,42 +20,41 @@ const register = async (req, res) => {
     }
 
     // Check if the user already exists
-    const checkExistingUser = await User.findOne({
-      $or: [{ userID }, { email }],
-    });
-    if (checkExistingUser) {
+    const existingUser = await User.findOne({ $or: [{ userID }, { email }] });
+    if (existingUser) {
       return res.status(409).json({
         success: false,
-        message: "User already exists",
+        message: "User with the same userID or email already exists",
       });
     }
 
     // Hash the password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Assign role
-    const userRole = role && ["admin", "user"].includes(role) ? role : "user";
+    // Assign role (defaults to 'user')
+    const userRole = ["admin", "user"].includes(role) ? role : "user";
 
-    // Create the new user
-    const newlyCreatedUser = await User.create({
+    // Create the user
+    const newUser = await User.create({
       userID,
       email,
       password: hashedPassword,
       role: userRole,
     });
 
-    // Send a success response
     res.status(201).json({
       success: true,
-      message: "User created successfully",
-      user: newlyCreatedUser,
+      message: "User registered successfully",
+      user: {
+        userID: newUser.userID,
+        email: newUser.email,
+        role: newUser.role,
+      },
     });
   } catch (error) {
-    // Handle errors and return them in the response
     res.status(500).json({
       success: false,
-      message: "Failed to register user",
+      message: "Error registering user",
       error: error.message,
     });
   }
@@ -61,21 +65,23 @@ const login = async (req, res) => {
     const { userID, password } = req.body;
 
     // Validate input
-    if (!userID || !password) {
+    if (!validateInput([userID, password])) {
       return res.status(400).json({
         success: false,
         message: "All fields are required",
       });
     }
 
+    // Find the user
     const user = await User.findOne({ userID });
     if (!user) {
-      return res.status(401).json({
+      return res.status(404).json({
         success: false,
-        message: "User doesn't exist",
+        message: "User not found",
       });
     }
 
+    // Verify the password
     const isPasswordMatch = await bcrypt.compare(password, user.password);
     if (!isPasswordMatch) {
       return res.status(401).json({
@@ -84,27 +90,22 @@ const login = async (req, res) => {
       });
     }
 
-    const accessToken = jwt.sign(
-      {
-        user: user._id,
-        email: user.email,
-        role: user.role,
-      },
+    // Generate JWT token
+    const token = jwt.sign(
+      { id: user._id, role: user.role, email: user.email },
       process.env.JWT_SECRET_KEY,
-      {
-        expiresIn: "15min",
-      }
+      { expiresIn: "1h" }
     );
 
     res.status(200).json({
       success: true,
-      message: "User logged in successfully",
-      accessToken,
+      message: "Login successful",
+      token,
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "Failed to login user",
+      message: "Error logging in",
       error: error.message,
     });
   }

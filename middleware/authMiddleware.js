@@ -2,25 +2,37 @@ const jwt = require("jsonwebtoken");
 
 const authMiddleware = (req, res, next) => {
   const authHeader = req.headers["authorization"];
-  console.log(authHeader);
   const token = authHeader && authHeader.split(" ")[1];
 
-  if (token == null) {
+  if (!token) {
     return res.status(401).json({
       success: false,
-      message: "Unauthorized",
+      message: "Access denied. No token provided.",
     });
   }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY);
-    console.log(decoded);
     req.userInfo = decoded;
     next();
   } catch (err) {
-    return res.status(401).json({
+    if (err.name === "TokenExpiredError") {
+      return res.status(401).json({
+        success: false,
+        message: "Session expired. Please log in again.",
+      });
+    }
+
+    if (err.name === "JsonWebTokenError") {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid token. Please log in again.",
+      });
+    }
+
+    return res.status(500).json({
       success: false,
-      message: "Unauthorized",
+      message: "Failed to authenticate token.",
     });
   }
 };
